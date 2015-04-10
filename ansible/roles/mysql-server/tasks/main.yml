@@ -1,0 +1,25 @@
+---
+# This role will install MySQL and create db user and give permissions.
+- name: Install MySQL
+  action: apt pkg={{ item }}
+  with_items:
+    - python-mysqldb
+    - mysql-client
+    - mysql-server
+
+- name: for the chroot we reload initctl
+  command: initctl reload-configuration
+- name: Start the MySQL service
+  action: service name=mysql state=started
+
+# 'localhost' needs to be the last item for idempotency, see
+# http://ansible.cc/docs/modules.html#mysql-user
+- name: update mysql root password for all root accounts
+  mysql_user: name=root host={{ item }} password=root priv=*.*:ALL,GRANT
+  with_items:
+    - 127.0.0.1
+    - ::1
+    - localhost
+
+- name: copy .my.cnf file with root password credentials
+  template: src=.my.cnf dest=/root/.my.cnf owner=root mode=0600

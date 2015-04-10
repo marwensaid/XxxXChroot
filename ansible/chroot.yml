@@ -1,0 +1,176 @@
+---
+- hosts: 127.0.0.1
+  vars:
+    user: eva2
+    group: mbs
+  user: root
+  tasks:
+  - apt: upgrade=dist
+  - apt: pkg=xauth state=installed
+#We allow X11 forwarding
+  - copy: dest=/root/.Xauthority content="" owner=root group=root mode=0600
+  - group: name={{group}} state=present
+  - user: name={{user}} password={{user}} createhome=yes groups={{group}},sudo shell=/bin/bash
+# SSH
+  - file: path=/home/{{user}} owner={{user}} group={{group}} mode=0774 state=directory
+  - file: path=/home/{{user}}/.ssh owner={{user}} group={{group}} mode=0774 state=directory
+  - lineinfile: dest=/root/.ssh/authorized_keys regexp="chroot" line="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC5wre4xEgakCPVpdIOHZx9HuxRfxcNZ7RVtAHaLvmQtmW1MMHmxSQDYIOxvVkMjvfnzIss2VAAOESNczRx7Mq7qRTZej4FTp7ZrFzUtOHLyhtUOebd9c1839qlXVk34EvbzFvi8ZWKMYYvBmrlNZxXAo7Q0FnNiUlK2Bx4D1inqFpE+E0y5AFFfBEgWNiF03aRCiPrGZN49Kq9hkpgVsI5bE6CNvdtO9ZTu7oNXQ6SQmRshXsZ5ydzfvBWxNE6qzZrj6NnimNwJd7bIsvDk/LB/QZJrVBd+0TzOjRusAVCH2liB2UJB5Sgl7ZVOk6gEyTZphWSvrV0luI4a4uOFpTp chroot@chroot"
+  - command: cp -r /root/.ssh/ /home/{{user}}/
+  - file: path=/home/{{user}}/.ssh/authorized_keys owner={{user}} group={{group}} mode=0600 state=file
+  - file: path=/home/{{user}}/.ssh/id_rsa owner={{user}} group={{group}} mode=0600 state=file
+  - file: path=/home/{{user}}/.ssh/id_rsa.pub owner={{user}} group={{group}} mode=0644 state=file
+  - copy: dest=/home/{{user}}/.Xauthority content="" owner={{user}} group={{group}} mode=0600
+  - name: ensure app apt dependencies are installed
+    action: apt pkg={{item}} state=latest
+    with_items:
+      - git
+      - subversion
+      - wget
+      - man-db
+      - python-yaml
+      - python-jinja2
+      - python-pycurl
+      - vim
+      - tmux
+      - unzip
+
+#activate universe multiverse
+  - name: get ubuntu version
+    shell: cat /etc/apt/sources.list | cut -d \  -f 3
+    register: ubuntu
+  - apt_repository: repo='deb http://us.archive.ubuntu.com/ubuntu {{ubuntu.stdout}} universe' state=present update_cache=yes
+  - apt_repository: repo='deb-src http://us.archive.ubuntu.com/ubuntu {{ubuntu.stdout}} universe' state=present update_cache=yes
+  - apt_repository: repo='deb http://us.archive.ubuntu.com/ubuntu {{ubuntu.stdout}} multiverse' state=present update_cache=yes
+  - apt_repository: repo='deb-src http://us.archive.ubuntu.com/ubuntu {{ubuntu.stdout}} multiverse' state=present update_cache=yes
+  - name: ensure sudoers config is written
+    action: template src=templates/sudoers dest=/etc/sudoers mode=0440
+  - name: ensure ssh config is written
+    action: template src=templates/ssh_config dest=/etc/ssh/ssh_config mode=0644
+  - name: get hostname
+    shell: hostname
+    register: chrootHostname
+  - host: ip=127.0.0.1 hostname={{chrootHostname.stdout}} aliases=localhost,localhost.(none) state=present
+
+- hosts: 127.0.0.1
+  user: root
+  vars:
+    user: eva2
+  tasks:
+  #java 7 installation
+  - file: path=/usr/lib/jvm/ state=directory
+  - command: chdir=/usr/lib/jvm/ wget --user='swat-tours' --password='minGomKeurf3' http://sources.srvc.cvf/projects/o//orange-rift/devkit/jdk-7u45-linux-i586.tar.gz creates=/usr/lib/jvm/jdk-7u45-linux-i586.tar.gz
+  - command: tar xzf jdk-7u45-linux-i586.tar.gz chdir=/usr/lib/jvm/ creates=/usr/lib/jvm/jdk1.7.0_45
+  - name: ensure java is accessible system wide
+    command: /usr/sbin/update-alternatives --install /usr/bin/{{item}} {{item}} /usr/lib/jvm/jdk1.7.0_45/bin/{{item}} 7 creates=/usr/bin/{{item}}
+    with_items:
+      - java
+      - javac
+      - javaws
+  - name: ensure java is accessible system wide2
+    command: /usr/sbin/update-alternatives --set {{item}} /usr/lib/jvm/jdk1.7.0_45/bin/{{item}}
+    with_items:
+      - java
+      - javac
+      - javaws
+
+
+#dev environment customization
+- hosts: 127.0.0.1
+  user: eva2
+  vars:
+    user: eva2
+  vars_files:
+    - vars.yml
+  tasks:
+  - file: path=/home/{{user}}/applications/ state=directory
+  - file: path=/home/{{user}}/workspace/ state=directory
+
+  - command: git clone git://github.com/multimediabs/bash-gitsvn-prompt.git /home/{{user}}/.bash creates=/home/{{user}}/.bash
+  - name: ensure chroot is cloned
+    shell: ssh-agent bash -c 'ssh-add /home/{{user}}/.ssh/id_rsa; git clone --recursive {{gitChrootUrl}} /home/{{user}}/workspace/chroot' creates=/home/{{user}}/workspace/chroot
+  - copy: src=vars.yml dest=/home/{{user}}/workspace/chroot/ansible/vars.yml
+  - name: ensure bashrc config is written
+    action: template src=templates/.bashrc dest=/home/{{user}}/.bashrc mode=0755
+  - name: ensure bashaliases config is written
+    action: template src=templates/.bash_aliases dest=/home/{{user}}/.bash_aliases mode=0755
+  - name: ensure tmux config is written
+    action: template src=templates/.tmux.conf dest=/home/{{user}}/.tmux.conf mode=0755
+  - name: ensure git config is written
+    action: template src=templates/.gitconfig dest=/home/{{user}}/.gitconfig mode=0755
+#play
+  - get_url: url=http://downloads.typesafe.com/play/1.2.7/play-1.2.7.zip dest=/home/{{user}}/applications/play-1.2.7.zip
+  - command: unzip /home/{{user}}/applications/play-1.2.7.zip chdir=/home/{{user}}/applications/ creates=/home/{{user}}/applications/play-1.2.7
+  - file: src=/home/{{user}}/applications/play-1.2.7 dest=/home/{{user}}/applications/play state=link
+  - name: make play available
+    action: file src=/home/{{user}}/applications/play/play dest=/usr/local/bin/play state=link
+    sudo: yes
+  - lineinfile: dest=/home/{{user}}/.bashrc regexp="JAVA_HOME=" line="export JAVA_HOME=\"/usr/lib/jvm/jdk1.7.0_45\""
+
+#custom
+  - name: checkout sources
+    shell: yes 'no' | svn co --username swat-tours --password minGomKeurf3 http://sources.srvc.cvf/projects/e//europcareva/Eva2/trunk/ europcar chdir=/home/{{user}}/workspace/ creates=/home/{{user}}/workspace/europcar
+  - name: install guice in play
+    shell: yes 'y' | play install guice creates=/home/{{user}}/applications/play/modules/guice-1.2
+  - get_url: url=http://dl.bintray.com/netty/downloads/netty-3.7.0.Final-dist.tar.bz2 dest=/home/{{user}}/applications/netty-3.7.0.Final-dist.tar.bz2
+  - command: tar xjvf netty-3.7.0.Final-dist.tar.bz2 chdir=/home/{{user}}/applications/ creates=netty-3.7.0.Final
+  - name: delete bad netty from play
+    file: path=/home/{{user}}/applications/play/framework/lib/netty-3.4.2.Final.jar state=absent
+    ignore_errors: True
+  - name: copy new netty to play
+    command: cp netty-3.7.0.Final/jar/netty-3.7.0.Final.jar play/framework/lib/ chdir=/home/{{user}}/applications/ creates=play/framework/lib/netty-3.7.0.Final.jar
+  - name: play idealize batch
+    command: play idealize /home/{{user}}/workspace/europcar/europcar-eva2-batch creates=/home/{{user}}/workspace/europcar/europcar-eva2-batch/europcar-eva2-batch.ipr
+  - name: play idealize webapp
+    command: play idealize /home/{{user}}/workspace/europcar/europcar-eva2-webapp creates=/home/{{user}}/workspace/europcar/europcar-eva2-webapp/europcar-eva2-webapp.ipr
+  - name: rm sql in flyway
+    file: path=/home/{{user}}/workspace/europcar/flyway-command-line/flyway-2.2.1/sql state=absent
+  - name: db.migration is a symlinc in flyway-command-line
+    file: src=/home/{{user}}/workspace/europcar/europcar-eva2-webapp/app/db/migration dest=/home/{{user}}/workspace/europcar/flyway-command-line/flyway-2.2.1/sql state=link
+
+# IPP
+  - name: ensure that you can deploy to ipp
+    file: dest=/home/{{user}}/.config/ipp/ state=directory
+  - name: ensure that you can deploy to ipp
+    template: src=templates/deploy.properties dest=/home/{{user}}/.config/ipp/deploy.properties
+  - name: install image magick
+    action: apt pkg={{item}} state=latest
+    with_items:
+      - imagemagick
+      - ffmpeg
+    sudo: yes
+  - name: tweak image magick faster for videos thumbnails
+    lineinfile: dest=/etc/ImageMagick/delegates.xml regexp="mpeg:decode" line="  <delegate decode=\"mpeg:decode\" command=\"&quot;ffmpeg&quot; -ss 00:00:%S -v -1 -i &quot;%i&quot; -vframes 1 -vcodec pam -an -f rawvideo -y &quot;%u.pam&quot; 2&gt; &quot;%Z&quot;\"/>"
+    sudo: yes
+  - lineinfile: dest=/home/{{user}}/.bashrc regexp="JAVA_OPTS=" line="export JAVA_OPTS=\"-Djava.awt.headless=true\""
+
+- include: playbooks/intellij.yml
+- include: playbooks/locales.yml
+
+#databases
+- hosts: 127.0.0.1
+  user: root
+  roles:
+  - mysql-server
+  tasks:
+  - mysql_db: name=europcar-eva2 state=present
+  - mysql_db: name=europcar-eva2-test state=present
+  - mysql_db: name=europcar-eva1 state=present
+  - mysql_user: name=europcar password=europcar priv=*.*:ALL state=present
+
+#elasticsearch
+- hosts: 127.0.0.1
+  user: eva2
+  vars:
+    user: eva2
+  sudo: yes
+  tasks:
+  - get_url: url=https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.6.deb dest=/home/{{user}}/applications/
+  - command: dpkg -i elasticsearch-0.90.6.deb chdir=/home/{{user}}/applications/ creates=/etc/init.d/elasticsearch
+  - service: name=elasticsearch state=started
+  - name: install head plugin --> http://localhost:9200/_plugin/head/
+    command: /usr/share/elasticsearch/bin/plugin -install mobz/elasticsearch-head creates=/usr/share/elasticsearch/plugins/head/
+  - lineinfile: 'dest=/etc/elasticsearch/elasticsearch.yml regexp="discovery.zen.ping.multicast.enabled" line="discovery.zen.ping.multicast.enabled: false"'
+    notify: restart elasticsearch
+  handlers:
+    - name: restart elasticsearch
+      service: name=elasticsearch state=restarted

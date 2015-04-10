@@ -1,0 +1,7 @@
+#Copy this file to vars.yml
+user: eva2
+gitChrootUrl: git@git.si.mbs:chroot/eva2.git
+name: Michael Bitard
+login: mbitard
+email: michael.bitard@orange.com
+ippKey: myippToken

@@ -1,0 +1,23 @@
+---
+- hosts: 127.0.0.1
+  vars:
+    user: eva2
+  user: eva2
+  tasks:
+  - name: download IntelliJ
+    get_url: url=http://download.jetbrains.com/idea/ideaIC-14.0.3.tar.gz dest=/home/{{user}}/applications
+  - name: untar intelliJ
+    command: tar xzf ideaIC-14.0.3.tar.gz chdir=/home/{{user}}/applications/ creates=idea-IC-139.1117.1
+  - file: state=link src=/home/{{user}}/applications/idea-IC-139.1117.1 dest=/home/{{user}}/applications/idea
+
+- hosts: 127.0.0.1
+  user: root
+  vars:
+    user: eva2
+  tasks:
+  - apt: pkg={{item}} state=latest
+    with_items:
+      - libxi6
+      - libxtst6
+      - libxrender1
+  - lineinfile: dest=/home/{{user}}/.bashrc regexp="IDEA_JDK=" line="export IDEA_JDK=\"/usr/lib/jvm/jdk1.7.0_45\""

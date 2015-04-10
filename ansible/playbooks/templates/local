@@ -1,0 +1,3 @@
+LANG={{default_locale}}
+LANGUAGE={{default_locale}}
+LC_ALL={{default_locale}}
